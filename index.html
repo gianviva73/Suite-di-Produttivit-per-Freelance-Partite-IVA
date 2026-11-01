@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="it" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Planner & Productivity Suite Freelance</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM (Production CDN) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Babel for JS syntax support in single-file -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <style>
+    /* Custom Scrollbar styling for Light Theme */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .glass-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased selection:bg-emerald-500 selection:text-white">
+  <div id="root"></div>
+
+  <!-- React Application Logic -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // Helper for rendering Lucide Icons safely
+    const Icon = ({ name, className = "w-5 h-5" }) => {
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }, [name]);
+
+      return <i data-lucide={name} className={className}></i>;
+    };
+
+    // Synthesized Sound Effects (AudioContext)
+    const playBeep = (freq = 587.33, duration = 0.25, type = 'sine') => {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {
+        console.warn("Audio Context sound error:", e);
+      }
+    };
+
+    const DAYS = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+
+    const STATUS_CONFIG = {
+      bozza: { label: 'Bozza', bg: 'bg-amber-50 text-amber-800 border-amber-200', badge: 'bg-amber-500' },
+      produzione: { label: 'In Produzione', bg: 'bg-indigo-50 text-indigo-800 border-indigo-200', badge: 'bg-indigo-500' },
+      pronto: { label: 'Pronto / Programmato', bg: 'bg-cyan-50 text-cyan-800 border-cyan-200', badge: 'bg-cyan-500' },
+      pubblicato: { label: 'Pubblicato', bg: 'bg-emerald-50 text-emerald-800 border-emerald-200', badge: 'bg-emerald-500' }
+    };
+
+    const CHANNELS = [
+      { id: 'instagram', name: 'Instagram', color: 'text-pink-600' },
+      { id: 'linkedin', name: 'LinkedIn', color: 'text-blue-600' },
+      { id: 'youtube', name: 'YouTube', color: 'text-red-600' },
+      { id: 'tiktok', name: 'TikTok', color: 'text-slate-800' },
+      { id: 'blog', name: 'Blog / Newsletter', color: 'text-emerald-700' },
+    ];
+
+    function App() {
+      const [activeTab, setActiveTab] = useState('planner'); // 'planner' | 'editorial' | 'pomodoro'
+      const [showGuideModal, setShowGuideModal] = useState(false);
+      
+      // ================= LocalStorage Persisted States =================
+      const [tasks, setTasks] = useState(() => {
+        try {
+          const saved = localStorage.getItem('freelance_weekly_tasks');
+          return saved ? JSON.parse(saved) : [
+            { id: 't1', day: 'Lunedì', title: 'Invio preventivo cliente Acme Srl', category: 'Clienti', completed: true, priority: 'alta' },
+            { id: 't2', day: 'Lunedì', title: 'Review settimanale obiettivi', category: 'Strategia', completed: false, priority: 'media' },
+            { id: 't3', day: 'Martedì', title: 'Registrazione Reel Instagram tutorial', category: 'Marketing', completed: false, priority: 'alta' },
+            { id: 't4', day: 'Mercoledì', title: 'Fatturazione fine mese e solleciti', category: 'Finanze', completed: false, priority: 'alta' },
+            { id: 't5', day: 'Giovedì', title: 'Aggiornamento librerie e backup codice', category: 'Dev', completed: false, priority: 'bassa' },
+            { id: 't6', day: 'Venerdì', title: 'Call Allineamento Progetto E-commerce', category: 'Clienti', completed: false, priority: 'media' },
+          ];
+        } catch(e) {
+          return [];
+        }
+      });
+
+      const [editorialPosts, setEditorialPosts] = useState(() => {
+        try {
+          const saved = localStorage.getItem('freelance_editorial_posts');
+          return saved ? JSON.parse(saved) : [
+            { id: 'p1', title: '5 Errori nel calcolo della tariffa oraria freelance', channel: 'instagram', status: 'pronto', date: '2026-11-05', format: 'Carousel Reel' },
+            { id: 'p2', title: 'Case study: Come ho ottimizzato un e-commerce +300%', channel: 'linkedin', status: 'produzione', date: '2026-11-08', format: 'Post Lungo' },
+            { id: 'p3', title: 'Guida completa a React 19 per sviluppatori', channel: 'youtube', status: 'bozza', date: '2026-11-12', format: 'Video Longform' },
+            { id: 'p4', title: 'Perché dovresti automatizzare i tuoi preventivi', channel: 'blog', status: 'pubblicato', date: '2026-10-28', format: 'Articolo Blog' }
+          ];
+        } catch(e) {
+          return [];
+        }
+      });
+
+      const [quickNotes, setQuickNotes] = useState(() => {
+        try {
+          return localStorage.getItem('freelance_pomodoro_notes') || "• Ricordarsi di inviare la bozza grafica a Marco\n• Idea per post: confronto Forfettario vs Ordinario\n• Controllare scadenze domini web";
+        } catch(e) {
+          return "";
+        }
+      });
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('freelance_weekly_tasks', JSON.stringify(tasks));
+        } catch(e) {}
+      }, [tasks]);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('freelance_editorial_posts', JSON.stringify(editorialPosts));
+        } catch(e) {}
+      }, [editorialPosts]);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('freelance_pomodoro_notes', quickNotes);
+        } catch(e) {}
+      }, [quickNotes]);
+
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }, [activeTab, tasks, editorialPosts, showGuideModal]);
+
+      // ================= Pomodoro Timer State =================
+      const WORK_TIME = 25 * 60;
+      const SHORT_BREAK = 5 * 60;
+      const LONG_BREAK = 15 * 60;
+
+      const [timerMode, setTimerMode] = useState('work');
+      const [timeLeft, setTimeLeft] = useState(WORK_TIME);
+      const [isRunning, setIsRunning] = useState(false);
+      const [sessionsCompleted, setSessionsCompleted] = useState(0);
+
+      const timerRef = useRef(null);
+
+      useEffect(() => {
+        if (isRunning) {
+          timerRef.current = setInterval(() => {
+            setTimeLeft((prev) => {
+              if (prev <= 1) {
+                clearInterval(timerRef.current);
+                setIsRunning(false);
+                playBeep(880, 0.4, 'triangle');
+
+                if (timerMode === 'work') {
+                  const newSessions = sessionsCompleted + 1;
+                  setSessionsCompleted(newSessions);
+                  if (newSessions % 4 === 0) {
+                    setTimerMode('longBreak');
+                    return LONG_BREAK;
+                  } else {
+                    setTimerMode('shortBreak');
+                    return SHORT_BREAK;
+                  }
+                } else {
+                  setTimerMode('work');
+                  return WORK_TIME;
+                }
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        } else {
+          clearInterval(timerRef.current);
+        }
+
+        return () => clearInterval(timerRef.current);
+      }, [isRunning, timerMode, sessionsCompleted]);
+
+      const switchTimerMode = (mode) => {
+        setIsRunning(false);
+        setTimerMode(mode);
+        if (mode === 'work') setTimeLeft(WORK_TIME);
+        if (mode === 'shortBreak') setTimeLeft(SHORT_BREAK);
+        if (mode === 'longBreak') setTimeLeft(LONG_BREAK);
+      };
+
+      const resetTimer = () => {
+        setIsRunning(false);
+        if (timerMode === 'work') setTimeLeft(WORK_TIME);
+        if (timerMode === 'shortBreak') setTimeLeft(SHORT_BREAK);
+        if (timerMode === 'longBreak') setTimeLeft(LONG_BREAK);
+      };
+
+      const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      };
+
+      // ================= Task Planner Logic =================
+      const [newTaskTitle, setNewTaskTitle] = useState('');
+      const [newTaskDay, setNewTaskDay] = useState('Lunedì');
+      const [newTaskCategory, setNewTaskCategory] = useState('Generale');
+      const [newTaskPriority, setNewTaskPriority] = useState('media');
+      const [plannerFilter, setPlannerFilter] = useState('all');
+
+      const addTask = (e) => {
+        e.preventDefault();
+        if (!newTaskTitle.trim()) return;
+        const item = {
+          id: Date.now().toString(),
+          title: newTaskTitle.trim(),
+          day: newTaskDay,
+          category: newTaskCategory || 'Generale',
+          priority: newTaskPriority,
+          completed: false
+        };
+        setTasks([...tasks, item]);
+        setNewTaskTitle('');
+      };
+
+      const toggleTask = (id) => {
+        setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+      };
+
+      const deleteTask = (id) => {
+        setTasks(tasks.filter(t => t.id !== id));
+      };
+
+      const clearCompletedTasks = () => {
+        setTasks(tasks.filter(t => !t.completed));
+      };
+
+      const totalTaskCount = tasks.length;
+      const completedTaskCount = tasks.filter(t => t.completed).length;
+      const completionPercentage = totalTaskCount > 0 ? Math.round((completedTaskCount / totalTaskCount) * 100) : 0;
+
+      // ================= Editorial Calendar Logic =================
+      const [newPostTitle, setNewPostTitle] = useState('');
+      const [newPostChannel, setNewPostChannel] = useState('instagram');
+      const [newPostStatus, setNewPostStatus] = useState('bozza');
+      const [newPostDate, setNewPostDate] = useState('');
+      const [newPostFormat, setNewPostFormat] = useState('Post / Reel');
+
+      const addPost = (e) => {
+        e.preventDefault();
+        if (!newPostTitle.trim()) return;
+        const post = {
+          id: Date.now().toString(),
+          title: newPostTitle.trim(),
+          channel: newPostChannel,
+          status: newPostStatus,
+          date: newPostDate || new Date().toISOString().split('T')[0],
+          format: newPostFormat || 'Standard'
+        };
+        setEditorialPosts([...editorialPosts, post]);
+        setNewPostTitle('');
+      };
+
+      const updatePostStatus = (id, newStatus) => {
+        setEditorialPosts(editorialPosts.map(p => p.id === id ? { ...p, status: newStatus } : p));
+      };
+
+      const deletePost = (id) => {
+        setEditorialPosts(editorialPosts.filter(p => p.id !== id));
+      };
+
+      return (
+        <div className="min-h-screen p-3 sm:p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+          
+          {/* TOP HEADER */}
+          <header className="glass-card rounded-3xl p-6 border border-slate-200 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-3">
+                  <Icon name="layout" className="w-3.5 h-3.5" />
+                  Suite Organizzativa Freelance
+                </div>
+                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                  Pianificazione & Produttività
+                </h1>
+                <p className="text-slate-600 text-sm mt-1 max-w-xl">
+                  Gestisci l'agenda settimanale, organizza i contenuti social e lavora in stato di flow con il timer integrato.
+                </p>
+              </div>
+
+              {/* Status Mini Summary & User Guide Button */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'FreelancePlannerSuite.html';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-3 rounded-2xl text-xs flex items-center gap-2 transition shadow-md shadow-emerald-600/20"
+                >
+                  <Icon name="download" className="w-4 h-4 text-white" />
+                  <span>Scarica File HTML</span>
+                </button>
+
+                <button
+                  onClick={() => setShowGuideModal(true)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-4 py-3 rounded-2xl text-xs flex items-center gap-2 transition shadow-sm"
+                >
+                  <Icon name="book-open" className="w-4 h-4 text-emerald-600" />
+                  <span>Guida all'Uso</span>
+                </button>
+
+                <div className="flex items-center gap-3 bg-slate-100 border border-slate-200 p-3 rounded-2xl">
+                  <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-sm">
+                    <Icon name="check-circle-2" className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 font-medium">Progresso Settimanale</div>
+                    <div className="text-xl font-bold text-slate-900 flex items-baseline gap-2">
+                      {completionPercentage}%
+                      <span className="text-xs text-slate-500 font-normal">({completedTaskCount}/{totalTaskCount} task)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* NAV NAVIGATION TABS */}
+            <div className="flex gap-2 mt-6 overflow-x-auto pb-1 scrollbar-none border-t border-slate-200 pt-4">
+              <button
+                onClick={() => setActiveTab('planner')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                  activeTab === 'planner'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Icon name="calendar-days" className="w-4 h-4" />
+                1. Planner & Checklist Settimanale
+              </button>
+
+              <button
+                onClick={() => setActiveTab('editorial')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                  activeTab === 'editorial'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Icon name="video" className="w-4 h-4" />
+                2. Piano Editoriale Social & Video
+              </button>
+
+              <button
+                onClick={() => setActiveTab('pomodoro')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                  activeTab === 'pomodoro'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Icon name="timer" className="w-4 h-4" />
+                3. Pomodoro Timer & Note Rapide
+              </button>
+            </div>
+          </header>
+
+          {/* MAIN CONTENT AREA */}
+          <main>
+
+            {/* ================= TAB 1: WEEKLY PLANNER ================= */}
+            {activeTab === 'planner' && (
+              <div className="space-y-6">
+                
+                {/* Task Creator Bar */}
+                <form onSubmit={addTask} className="glass-card rounded-2xl p-4 border border-slate-200 flex flex-col md:flex-row gap-3 items-center shadow-sm">
+                  <div className="flex-1 w-full">
+                    <input 
+                      type="text"
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      placeholder="Aggiungi una nuova attività (es: Revisione codice cliente, Invio fattura...)"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 transition"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    <select
+                      value={newTaskDay}
+                      onChange={(e) => setNewTaskDay(e.target.value)}
+                      className="bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs text-slate-800 font-medium focus:outline-none focus:border-emerald-500"
+                    >
+                      {DAYS.map(day => (
+                        <option key={day} value={day}>{day}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={newTaskPriority}
+                      onChange={(e) => setNewTaskPriority(e.target.value)}
+                      className="bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs text-slate-800 font-medium focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="bassa">Priorità Bassa</option>
+                      <option value="media">Priorità Media</option>
+                      <option value="alta">Priorità Alta</option>
+                    </select>
+
+                    <button
+                      type="submit"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap shadow-md shadow-emerald-600/20"
+                    >
+                      <Icon name="plus" className="w-4 h-4" />
+                      Aggiungi Task
+                    </button>
+                  </div>
+                </form>
+
+                {/* Filters & Actions Bar */}
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 font-medium">Filtra:</span>
+                    <button
+                      onClick={() => setPlannerFilter('all')}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${plannerFilter === 'all' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      Tutti ({tasks.length})
+                    </button>
+                    <button
+                      onClick={() => setPlannerFilter('pending')}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${plannerFilter === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      Da Fare ({tasks.filter(t => !t.completed).length})
+                    </button>
+                    <button
+                      onClick={() => setPlannerFilter('completed')}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${plannerFilter === 'completed' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      Completati ({completedTaskCount})
+                    </button>
+                  </div>
+
+                  {completedTaskCount > 0 && (
+                    <button
+                      onClick={clearCompletedTasks}
+                      className="text-xs text-slate-500 hover:text-rose-600 transition flex items-center gap-1 font-medium"
+                    >
+                      <Icon name="trash-2" className="w-3.5 h-3.5" />
+                      Pulisci completati
+                    </button>
+                  )}
+                </div>
+
+                {/* Days Columns Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+                  {DAYS.map((day) => {
+                    const dayTasks = tasks.filter(t => t.day === day && (
+                      plannerFilter === 'all' ? true :
+                      plannerFilter === 'pending' ? !t.completed : t.completed
+                    ));
+                    
+                    const dayCompleted = tasks.filter(t => t.day === day && t.completed).length;
+                    const dayTotal = tasks.filter(t => t.day === day).length;
+
+                    return (
+                      <div key={day} className="glass-card rounded-2xl p-4 border border-slate-200 flex flex-col justify-between space-y-3 min-h-[300px] shadow-sm">
+                        <div>
+                          {/* Day Header */}
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                            <h3 className="font-bold text-sm text-slate-900">{day}</h3>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
+                              {dayCompleted}/{dayTotal}
+                            </span>
+                          </div>
+
+                          {/* Task List */}
+                          <div className="space-y-2.5 mt-3">
+                            {dayTasks.length === 0 ? (
+                              <div className="text-center py-6 text-slate-400 text-xs italic">
+                                Nessun task
+                              </div>
+                            ) : (
+                              dayTasks.map((task) => (
+                                <div
+                                  key={task.id}
+                                  className={`p-3 rounded-xl border text-xs transition-all duration-200 space-y-2 group ${
+                                    task.completed
+                                      ? 'bg-slate-50 border-slate-200 text-slate-400 line-through'
+                                      : 'bg-white border-slate-200 hover:border-emerald-300 text-slate-800 shadow-sm'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-start gap-2 flex-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={task.completed}
+                                        onChange={() => toggleTask(task.id)}
+                                        className="mt-0.5 accent-emerald-600 rounded cursor-pointer w-4 h-4"
+                                      />
+                                      <span className="break-words font-medium">{task.title}</span>
+                                    </div>
+
+                                    <button
+                                      onClick={() => deleteTask(task.id)}
+                                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition"
+                                    >
+                                      <Icon name="x" className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center justify-between pt-1 text-[10px]">
+                                    <span className={`font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                      task.priority === 'alta' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+                                      task.priority === 'media' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                                      'bg-slate-100 text-slate-600 border border-slate-200'
+                                    }`}>
+                                      {task.priority}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Quick Day Add Button */}
+                        <button
+                          onClick={() => {
+                            setNewTaskDay(day);
+                            const title = prompt(`Aggiungi attività per ${day}:`);
+                            if (title && title.trim()) {
+                              setTasks([...tasks, {
+                                id: Date.now().toString(),
+                                title: title.trim(),
+                                day: day,
+                                category: 'Generale',
+                                priority: 'media',
+                                completed: false
+                              }]);
+                            }
+                          }}
+                          className="w-full py-2 bg-slate-50 hover:bg-emerald-50 border border-dashed border-slate-300 hover:border-emerald-400 text-slate-600 hover:text-emerald-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1"
+                        >
+                          <Icon name="plus" className="w-3 h-3" />
+                          Aggiungi a {day}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ================= TAB 2: EDITORIAL CALENDAR ================= */}
+            {activeTab === 'editorial' && (
+              <div className="space-y-6">
+
+                {/* Add Post Form */}
+                <form onSubmit={addPost} className="glass-card rounded-2xl p-5 border border-slate-200 space-y-4 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <Icon name="plus-circle" className="w-4 h-4 text-emerald-600" />
+                    Pianifica Nuovo Contenuto Social / Video
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+                    <div className="lg:col-span-4">
+                      <input 
+                        type="text"
+                        value={newPostTitle}
+                        onChange={(e) => setNewPostTitle(e.target.value)}
+                        placeholder="Titolo contenuto (es: 3 Consigli per Freelance)"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div className="lg:col-span-2">
+                      <select
+                        value={newPostChannel}
+                        onChange={(e) => setNewPostChannel(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none"
+                      >
+                        {CHANNELS.map(ch => (
+                          <option key={ch.id} value={ch.id}>{ch.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="lg:col-span-2">
+                      <input 
+                        type="text"
+                        value={newPostFormat}
+                        onChange={(e) => setNewPostFormat(e.target.value)}
+                        placeholder="Formato (es: Reel, Carousel)"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div className="lg:col-span-2">
+                      <input 
+                        type="date"
+                        value={newPostDate}
+                        onChange={(e) => setNewPostDate(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="lg:col-span-2">
+                      <button
+                        type="submit"
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-xl transition shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
+                      >
+                        <Icon name="send" className="w-3.5 h-3.5" />
+                        Aggiungi
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {/* Pipeline Kanban Board */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {Object.entries(STATUS_CONFIG).map(([statusKey, config]) => {
+                    const statusPosts = editorialPosts.filter(p => p.status === statusKey);
+
+                    return (
+                      <div key={statusKey} className="glass-card rounded-2xl p-4 border border-slate-200 space-y-3 flex flex-col justify-between min-h-[400px] shadow-sm">
+                        <div>
+                          {/* Status Header */}
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                            <span className="flex items-center gap-2 text-xs font-bold text-slate-900">
+                              <span className={`w-2.5 h-2.5 rounded-full ${config.badge}`}></span>
+                              {config.label}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                              {statusPosts.length}
+                            </span>
+                          </div>
+
+                          {/* Post List */}
+                          <div className="space-y-3 mt-3">
+                            {statusPosts.length === 0 ? (
+                              <div className="text-center py-8 text-slate-400 text-xs italic">
+                                Nessun contenuto
+                              </div>
+                            ) : (
+                              statusPosts.map((post) => {
+                                const channelObj = CHANNELS.find(c => c.id === post.channel);
+
+                                return (
+                                  <div 
+                                    key={post.id}
+                                    className="bg-white border border-slate-200 hover:border-emerald-300 rounded-xl p-3 space-y-2 text-xs shadow-sm transition"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className={`font-bold ${channelObj?.color || 'text-emerald-700'}`}>
+                                        {channelObj?.name}
+                                      </span>
+                                      <button
+                                        onClick={() => deletePost(post.id)}
+                                        className="text-slate-400 hover:text-rose-600 transition"
+                                      >
+                                        <Icon name="trash" className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+
+                                    <h4 className="font-semibold text-slate-900 leading-snug">
+                                      {post.title}
+                                    </h4>
+
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                                      <span>{post.format}</span>
+                                      <span>📅 {post.date}</span>
+                                    </div>
+
+                                    {/* Quick status selector */}
+                                    <div className="pt-2">
+                                      <select
+                                        value={post.status}
+                                        onChange={(e) => updatePostStatus(post.id, e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[10px] text-slate-800 font-medium focus:outline-none"
+                                      >
+                                        {Object.entries(STATUS_CONFIG).map(([k, cfg]) => (
+                                          <option key={k} value={k}>Sposta in: {cfg.label}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+              </div>
+            )}
+
+            {/* ================= TAB 3: POMODORO & SCRATCHPAD ================= */}
+            {activeTab === 'pomodoro' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                
+                {/* POMODORO TIMER PANEL (7 COLS) */}
+                <div className="lg:col-span-7 glass-card rounded-3xl p-6 sm:p-8 border border-slate-200 space-y-6 text-center shadow-xl relative overflow-hidden">
+                  
+                  {/* Mode switcher */}
+                  <div className="inline-flex p-1 rounded-2xl bg-slate-100 border border-slate-200 gap-1">
+                    <button
+                      onClick={() => switchTimerMode('work')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                        timerMode === 'work' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Lavoro (25m)
+                    </button>
+
+                    <button
+                      onClick={() => switchTimerMode('shortBreak')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                        timerMode === 'shortBreak' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Pausa Breve (5m)
+                    </button>
+
+                    <button
+                      onClick={() => switchTimerMode('longBreak')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                        timerMode === 'longBreak' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Pausa Lunga (15m)
+                    </button>
+                  </div>
+
+                  {/* Big Clock Display */}
+                  <div className="py-6">
+                    <div className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tight text-slate-900 font-mono">
+                      {formatTime(timeLeft)}
+                    </div>
+                    <div className="text-xs uppercase font-bold tracking-widest text-slate-500 mt-3">
+                      {timerMode === 'work' ? '🔥 Concentrazione Intensa' : '☕ Pausa e Relax'}
+                    </div>
+                  </div>
+
+                  {/* Play/Pause Controls */}
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => setIsRunning(!isRunning)}
+                      className={`px-8 py-3.5 rounded-2xl font-extrabold text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2 ${
+                        isRunning 
+                          ? 'bg-amber-500 hover:bg-amber-400 text-white shadow-amber-500/20' 
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+                      }`}
+                    >
+                      <Icon name={isRunning ? "pause" : "play"} className="w-5 h-5 fill-current" />
+                      <span>{isRunning ? 'PAUSA' : 'AVVIA TIMER'}</span>
+                    </button>
+
+                    <button
+                      onClick={resetTimer}
+                      className="p-3.5 rounded-2xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 hover:text-slate-900 transition shadow-sm"
+                      title="Reset Timer"
+                    >
+                      <Icon name="rotate-ccw" className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Sessions counter */}
+                  <div className="pt-4 border-t border-slate-200 flex justify-center items-center gap-6 text-xs text-slate-500">
+                    <div>
+                      Sessioni Completate: <span className="font-bold text-emerald-700 text-sm ml-1">{sessionsCompleted}</span>
+                    </div>
+                    <div className="text-slate-300">•</div>
+                    <div>
+                      Ciclo: <span className="font-bold text-slate-900 text-sm ml-1">{(sessionsCompleted % 4) + 1} di 4</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SCRATCHPAD NOTES (5 COLS) */}
+                <div className="lg:col-span-5 glass-card rounded-3xl p-6 border border-slate-200 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      <Icon name="edit-3" className="w-4 h-4 text-emerald-600" />
+                      Blocco Note Rapido (Scratchpad)
+                    </h3>
+                    <span className="text-[10px] text-slate-400 font-medium">Salvataggio Automatico</span>
+                  </div>
+
+                  <p className="text-xs text-slate-500">
+                    Annota qui idee veloci e distrazioni durante la sessione Pomodoro senza interrompere la concentrazione.
+                  </p>
+
+                  <textarea
+                    value={quickNotes}
+                    onChange={(e) => setQuickNotes(e.target.value)}
+                    placeholder="Scrivi qui i tuoi pensieri o le idee veloci..."
+                    className="w-full h-72 bg-white border border-slate-300 rounded-2xl p-4 text-xs text-slate-900 font-mono focus:outline-none focus:border-emerald-500 transition resize-none leading-relaxed"
+                  />
+
+                  <div className="flex justify-between items-center text-[11px] text-slate-500">
+                    <span>{quickNotes.length} caratteri</span>
+                    <button
+                      onClick={() => setQuickNotes('')}
+                      className="hover:text-rose-600 transition font-medium"
+                    >
+                      Svuota Note
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+          </main>
+
+          {/* GUIDA UTENTE MODAL */}
+          {showGuideModal && (
+            <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 md:p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+                
+                {/* Modal Header */}
+                <div className="flex justify-between items-center border-b border-slate-200 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700">
+                      <Icon name="book-open" className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-extrabold text-slate-900">Guida all'Uso dell'App</h3>
+                      <p className="text-xs text-slate-500">Come organizzare al meglio le tue attività da freelance</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowGuideModal(false)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition"
+                  >
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Modal Guide Content */}
+                <div className="space-y-6 text-sm text-slate-700">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2.5 bg-emerald-600 text-white font-bold rounded-xl text-xs flex-shrink-0">
+                      1
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">Planner Settimanale (Agenda Checklist)</h4>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        Pianifica le tue attività giorno per giorno (Lunedì - Domenica). Assegna la priorità (Alta, Media, Bassa) e spunta i task mano a mano che li completi. Tutti i dati vengono automaticamente salvati nel browser.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-4 border-t border-slate-100 pt-4">
+                    <div className="p-2.5 bg-emerald-600 text-white font-bold rounded-xl text-xs flex-shrink-0">
+                      2
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">Piano Editoriale Social & Video</h4>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        Organizza i tuoi contenuti in una Kanban Board suddivisa per stato (Bozza, In Produzione, Pronto, Pubblicato). Seleziona la piattaforma (Instagram, LinkedIn, YouTube, TikTok, Blog) e imposta la data prevista.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-4 border-t border-slate-100 pt-4">
+                    <div className="p-2.5 bg-emerald-600 text-white font-bold rounded-xl text-xs flex-shrink-0">
+                      3
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">Pomodoro Timer & Note Rapide</h4>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        Usa la tecnica Pomodoro (25 minuti di lavoro concentrato + 5 o 15 minuti di pausa). Utilizza il blocco note integrato (Scratchpad) per annotare pensieri estemporanei o distrazioni senza uscire dal flusso di lavoro.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="pt-4 border-t border-slate-200 flex justify-end">
+                  <button
+                    onClick={() => setShowGuideModal(false)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow-md transition"
+                  >
+                    Ho Capito, Inizia!
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* FOOTER */}
+          <footer className="pt-6 border-t border-slate-200 text-center text-xs text-slate-500">
+            <p>
+              Planner & Suite Produttività per Freelance • Tutti i dati sono memorizzati in locale (LocalStorage) nel tuo browser.
+            </p>
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
